@@ -1,78 +1,115 @@
-import { createHash, createCipheriv, createDecipheriv } from "crypto";
-
 interface EncryptionData {
-    ct: string;
-    iv: string;
-    s: string;
+  ct: string;
+  iv: string;
+  s: string;
 }
 
-function encrypt(data: string, key: string): string {
-    let salt = "";
-    let salted = "";
-    let dx = Buffer.alloc(0);
+async function encrypt(data: string, key: string): Promise<string> {
+  let salt = "";
+  let salted = "";
+  let dx = new Uint8Array(0);
 
-    // Generate salt, as 8 random lowercase letters
-    salt = String.fromCharCode(...Array(8).fill(0).map(_ => Math.floor(Math.random() * 26) + 97))
+  // Generate salt, as 8 random lowercase letters
+  const saltArray = new Uint8Array(8);
+  crypto.getRandomValues(saltArray);
+  salt = Array.from(saltArray, (byte) =>
+    String.fromCharCode(97 + (byte % 26))
+  ).join("");
 
-    // Our final key and iv come from the key and salt being repeatedly hashed
-    // dx = md5(md5(md5(key + salt) + key + salt) + key + salt)
-    // For each round of hashing, we append the result to salted, resulting in a 96 character string
-    // The first 64 characters are the key, and the last 32 are the iv
-    for (let x = 0; x < 3; x++) {
-        dx = createHash("md5")
-            .update(
-                Buffer.concat([
-                    Buffer.from(dx),
-                    Buffer.from(key),
-                    Buffer.from(salt),
-                ])
-            )
-            .digest();
+  // Our final key and iv come from the key and salt being repeatedly hashed
+  // dx = md5(md5(md5(key + salt) + key + salt) + key + salt)
+  // For each round of hashing, we append the result to salted, resulting in a 96 character string
+  // The first 64 characters are the key, and the last 32 are the iv
+  for (let x = 0; x < 3; x++) {
+    const dataToHash = new TextEncoder().encode(salted + key + salt);
+    const hashBuffer = await crypto.subtle.digest("MD5", dataToHash);
+    dx = new Uint8Array([...new Uint8Array(dx), ...new Uint8Array(hashBuffer)]);
+    salted += Array.from(new Uint8Array(hashBuffer), (byte) =>
+      byte.toString(16).padStart(2, "0")
+    ).join("");
+  }
 
-        salted += dx.toString("hex");
-    }
+  const keyBytes = new Uint8Array(dx.slice(0, 32));
+  const ivBytes = new Uint8Array(dx.slice(32, 64));
 
-    let aes = createCipheriv(
-        "aes-256-cbc",
-        Buffer.from(salted.substring(0, 64), "hex"), // Key
-        Buffer.from(salted.substring(64, 64 + 32), "hex") // IV
-    );
+  const encodedData = new TextEncoder().encode(data);
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    { name: "AES-CBC" },
+    false,
+    ["encrypt"]
+  );
+  const encryptedDataBuffer = await crypto.subtle.encrypt(
+    { name: "AES-CBC", iv: ivBytes },
+    cryptoKey,
+    encodedData
+  );
+  const encryptedDataArray = Array.from(new Uint8Array(encryptedDataBuffer));
+  const encryptedData = btoa(String.fromCharCode(...encryptedDataArray));
 
-    return JSON.stringify({
-        ct: aes.update(data, null, "base64") + aes.final("base64"),
-        iv: salted.substring(64, 64 + 32),
-        s: Buffer.from(salt).toString("hex"),
-    });
+  return JSON.stringify({
+    ct: encryptedData,
+    iv: salted.substring(64, 64 + 32),
+    s: Array.from(new TextEncoder().encode(salt), (byte) =>
+      byte.toString(16).padStart(2, "0")
+    ).join(""),
+  });
 }
 
-function decrypt(rawData: string, key: string): string {
-    let data: EncryptionData = JSON.parse(rawData);
+async function decrypt(rawData: string, key: string): Promise<string> {
+  let data: EncryptionData = JSON.parse(rawData);
 
-    // We get our decryption key by doing the inverse of the encryption process
-    let dk = Buffer.concat([Buffer.from(key), Buffer.from(data.s, "hex")]);
-    let arr = [Buffer.from(createHash("md5").update(dk).digest()).toString("hex")];
-    let result = arr[0];
+  // We get our decryption key by doing the inverse of the encryption process
+  let dk = new TextEncoder().encode(key + data.s);
+  let arr = [
+    Array.from(new Uint8Array(await crypto.subtle.digest("MD5", dk)), (byte) =>
+      byte.toString(16).padStart(2, "0")
+    ).join(""),
+  ];
+  let result = arr[0];
 
-    for (let x = 1; x < 3; x++) {
-        arr.push(
-            Buffer.from(
-                createHash("md5")
-                    .update(Buffer.concat([Buffer.from(arr[x - 1], "hex"), dk]))
-                    .digest()
-            ).toString("hex")
-        );
-        result += arr[x];
-    }
-
-    let aes = createDecipheriv(
-        "aes-256-cbc",
-        Buffer.from(result.substring(0, 64), "hex"),
-        Buffer.from(data.iv, "hex")
+  for (let x = 1; x < 3; x++) {
+    dk = new Uint8Array([
+      ...new Uint8Array(await crypto.subtle.digest("MD5", dk)),
+      ...new TextEncoder().encode(key + data.s),
+    ]);
+    arr.push(
+      Array.from(
+        new Uint8Array(await crypto.subtle.digest("MD5", dk)),
+        (byte) => byte.toString(16).padStart(2, "0")
+      ).join("")
     );
-    return aes.update(data.ct, "base64", "utf8") + aes.final("utf8");
+    result += arr[x];
+  }
+
+  const keyBytes = new TextEncoder().encode(result.slice(0, 64)).buffer;
+  const ivBytes = new Uint8Array(new TextEncoder().encode(data.iv));
+
+  const decodedData = atob(data.ct);
+  const decodedDataArray = new Uint8Array(decodedData.length);
+  for (let i = 0; i < decodedData.length; i++) {
+    decodedDataArray[i] = decodedData.charCodeAt(i);
+  }
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    { name: "AES-CBC" },
+    false,
+    ["decrypt"]
+  );
+  const decryptedDataBuffer = await crypto.subtle.decrypt(
+    { name: "AES-CBC", iv: ivBytes },
+    cryptoKey,
+    decodedDataArray
+  );
+  const decryptedData = new TextDecoder().decode(decryptedDataBuffer);
+
+  return decryptedData;
 }
 
 export default {
-    encrypt,
-    decrypt,
+  encrypt,
+  decrypt,
 };
