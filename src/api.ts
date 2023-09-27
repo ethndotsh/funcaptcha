@@ -74,7 +74,7 @@ export async function getToken(
     {
       method: "POST",
       body: util.constructFormData({
-        bda: util.getBda(ua, options),
+        bda: await util.getBda(ua, options),
         public_key: options.pkey,
         site: options.site ? new URL(options.site).origin : undefined,
         userbrowser: ua,

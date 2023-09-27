@@ -145,7 +145,7 @@ function getTimestamp(): TimestampData {
   return { cookie: `timestamp=${value};path=/;secure;samesite=none`, value };
 }
 
-function getBda(userAgent: string, opts: object): string {
+async function getBda(userAgent: string, opts: object): Promise<string> {
   let fp = fingerprint.getFingerprint();
   let fe = fingerprint.prepareFe(fp);
 
@@ -183,7 +183,7 @@ function getBda(userAgent: string, opts: object): string {
   let key = userAgent + Math.round(time - (time % 21600));
 
   let s = JSON.stringify(bda);
-  let encrypted = crypt.encrypt(s, key);
+  let encrypted = await crypt.encrypt(s, key);
   return Buffer.from(encrypted).toString("base64");
 }
 

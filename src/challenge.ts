@@ -2,7 +2,6 @@ import request from "./http";
 import { TokenInfo } from "./session";
 import util from "./util";
 import crypt from "./crypt";
-import { assert } from "console";
 
 interface ChallengeOptions {
   userAgent?: string;
@@ -209,7 +208,7 @@ export class Challenge3 extends Challenge {
   }
 
   async answer(tile: number): Promise<AnswerResponse> {
-    assert(tile >= 0 && tile <= 5, "Tile must be between 0 and 5");
+    console.assert(tile >= 0 && tile <= 5, "Tile must be between 0 and 5");
 
     let pos = util.tileToLoc(tile);
     this.answerHistory.push(
@@ -269,7 +268,7 @@ export class Challenge4 extends Challenge {
   }
 
   async answer(index: number): Promise<AnswerResponse> {
-    assert(
+    console.assert(
       index >= 0 && index <= this.data.game_data.game_difficulty - 1,
       "Index must be between 0 and " + (this.data.game_data.game_difficulty - 1)
     );
