@@ -2,7 +2,7 @@ async function request(url: string, options: RequestInit) {
   const res = await fetch(url, options);
 
   return {
-    headers: res.headers,
+    headers: Object.fromEntries(res.headers.entries()),
     body: Buffer.from(await res.arrayBuffer()),
   };
 }
