@@ -1,6 +1,6 @@
 {
   "name": "@cursecode/funcaptcha",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A library used to interact with funcaptchas. Adapted to work with modern web standards.",
   "author": "ethndotsh",
   "license": "MIT",
